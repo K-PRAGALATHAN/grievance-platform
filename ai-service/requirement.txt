@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+anthropic
+langchain
+pymupdf
+pytesseract
+pillow
+python-dotenv
+httpx

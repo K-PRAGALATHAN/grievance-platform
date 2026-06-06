@@ -1,0 +1,29 @@
+# dependencies
+node_modules
+frontend/node_modules
+backend/node_modules
+
+# next.js
+frontend/.next
+frontend/out
+
+# python
+__pycache__
+*.pyc
+ai-service/venv
+venv
+
+# env files
+.env
+frontend/.env
+backend/.env
+ai-service/.env
+
+# docker/database
+pgdata
+*.log
+
+# OS/editor
+.DS_Store
+.vscode
+.idea
