@@ -7,9 +7,377 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  CITIZEN
+  OFFICER
+  ADMIN
+}
+
+enum ComplaintStatus {
+  SUBMITTED
+  TRIAGED
+  ASSIGNED
+  IN_REVIEW
+  RESOLVED
+  REJECTED
+  ESCALATED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AttachmentType {
+  IMAGE
+  PDF
+  AUDIO
+  VIDEO
+  DOC
+  OTHER
+}
+
+enum AgentStatus {
+  SUCCESS
+  FAILED
+  PENDING
+}
+
+enum DraftStatus {
+  DRAFT
+  APPROVED
+  SENT
+}
+
+enum EscalationStatus {
+  OPEN
+  ACKNOWLEDGED
+  CLOSED
+}
+
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
+  id                 Int      @id @default(autoincrement())
+  name               String
+  email              String   @unique
+  phone              String?
+  passwordHash       String
+  role               UserRole
+  languagePreference String   @default("en")
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  citizenProfile CitizenProfile?
+  officerProfile OfficerProfile?
+
+  complaints         Complaint[] @relation("CitizenComplaints")
+  assignedComplaints Complaint[] @relation("OfficerComplaints")
+
+  responses Response[]
+  alerts    Alert[]
+  auditLogs AuditLog[]
+}
+
+model CitizenProfile {
+  id           Int     @id @default(autoincrement())
+  userId       Int     @unique
+  address      String?
+  district     String?
+  state        String?
+  pincode      String?
+  aadhaarLast4 String?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model OfficerProfile {
+  id             Int     @id @default(autoincrement())
+  userId         Int     @unique
+  departmentId   Int
+  designation    String?
+  jurisdictionId Int?
+  workloadCount  Int     @default(0)
+
+  user         User          @relation(fields: [userId], references: [id])
+  department   Department    @relation(fields: [departmentId], references: [id])
+  jurisdiction Jurisdiction? @relation(fields: [jurisdictionId], references: [id])
+}
+
+model Department {
+  id          Int     @id @default(autoincrement())
+  name        String
+  code        String  @unique
+  description String?
+
+  categories  ComplaintCategory[]
+  complaints  Complaint[]
+  officers    OfficerProfile[]
+  slaPolicies SlaPolicy[]
+}
+
+model Jurisdiction {
+  id       Int    @id @default(autoincrement())
+  name     String
+  type     String
+  parentId Int?
+
+  complaints Complaint[]
+  officers   OfficerProfile[]
+}
+
+model ComplaintCategory {
+  id           Int     @id @default(autoincrement())
+  name         String
+  description  String?
+  departmentId Int
+
+  department Department  @relation(fields: [departmentId], references: [id])
+  complaints Complaint[]
+}
+
+model Complaint {
+  id              Int    @id @default(autoincrement())
+  complaintNumber String @unique
+
+  citizenId             Int
+  title                 String
+  description           String
+  translatedDescription String?
+
+  categoryId Int?
+  priority   Priority?
+  status     ComplaintStatus @default(SUBMITTED)
+
+  departmentId      Int?
+  jurisdictionId    Int?
+  assignedOfficerId Int?
+
+  locationText  String?
+  latitude      Float?
+  longitude     Float?
+  language      String?
+  sourceChannel String  @default("WEB")
+  aiConfidence  Float?
+
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  citizen         User  @relation("CitizenComplaints", fields: [citizenId], references: [id])
+  assignedOfficer User? @relation("OfficerComplaints", fields: [assignedOfficerId], references: [id])
+
+  category     ComplaintCategory? @relation(fields: [categoryId], references: [id])
+  department   Department?        @relation(fields: [departmentId], references: [id])
+  jurisdiction Jurisdiction?      @relation(fields: [jurisdictionId], references: [id])
+
+  attachments         Attachment[]
+  documentExtractions DocumentExtraction[]
+  voiceTranscripts    VoiceTranscript[]
+  aiAnalyses          AiAnalysis[]
+  agentRuns           AiAgentRun[]
+  routingDecisions    RoutingDecision[]
+  responses           Response[]
+  resolutionDrafts    ResolutionDraft[]
+  internalNotes       InternalNote[]
+  statusHistory       ComplaintStatusHistory[]
+  escalations         Escalation[]
+  alerts              Alert[]
+  feedback            CitizenFeedback?
+}
+
+model Attachment {
+  id          Int            @id @default(autoincrement())
+  complaintId Int
+  fileUrl     String
+  fileName    String?
+  fileType    AttachmentType
+  mimeType    String?
+  sizeBytes   Int?
+  uploadedBy  Int?
+  createdAt   DateTime       @default(now())
+
+  complaint  Complaint           @relation(fields: [complaintId], references: [id])
+  extraction DocumentExtraction?
+  transcript VoiceTranscript?
+}
+
+model DocumentExtraction {
+  id               Int      @id @default(autoincrement())
+  complaintId      Int
+  attachmentId     Int      @unique
+  extractedText    String?
+  detectedLanguage String?
+  extractionStatus String   @default("PENDING")
+  aiSummary        String?
+  createdAt        DateTime @default(now())
+
+  complaint  Complaint  @relation(fields: [complaintId], references: [id])
+  attachment Attachment @relation(fields: [attachmentId], references: [id])
+}
+
+model VoiceTranscript {
+  id             Int      @id @default(autoincrement())
+  complaintId    Int
+  attachmentId   Int?     @unique
+  transcriptText String
+  language       String?
+  confidence     Float?
+  createdAt      DateTime @default(now())
+
+  complaint  Complaint   @relation(fields: [complaintId], references: [id])
+  attachment Attachment? @relation(fields: [attachmentId], references: [id])
+}
+
+model AiAnalysis {
+  id                   Int      @id @default(autoincrement())
+  complaintId          Int
+  detectedLanguage     String?
+  translatedText       String?
+  summary              String?
+  categorySuggestion   String?
+  prioritySuggestion   String?
+  departmentSuggestion String?
+  locationSuggestion   String?
+  confidenceScore      Float?
+  createdAt            DateTime @default(now())
+
+  complaint Complaint @relation(fields: [complaintId], references: [id])
+}
+
+model AiAgentRun {
+  id           Int         @id @default(autoincrement())
+  complaintId  Int
+  agentName    String
+  inputJson    Json?
+  outputJson   Json?
+  status       AgentStatus @default(PENDING)
+  errorMessage String?
+  latencyMs    Int?
+  createdAt    DateTime    @default(now())
+
+  complaint Complaint @relation(fields: [complaintId], references: [id])
+}
+
+model RoutingDecision {
+  id              Int      @id @default(autoincrement())
+  complaintId     Int
+  departmentId    Int?
+  officerId       Int?
+  reason          String?
+  confidenceScore Float?
+  isAiDecided     Boolean  @default(true)
+  approvedBy      Int?
+  createdAt       DateTime @default(now())
+
+  complaint Complaint @relation(fields: [complaintId], references: [id])
+}
+
+model Response {
+  id              Int       @id @default(autoincrement())
+  complaintId     Int
+  officerId       Int
+  message         String
+  isAiGenerated   Boolean   @default(false)
+  isFinalResponse Boolean   @default(false)
+  sentAt          DateTime?
+  createdAt       DateTime  @default(now())
+
+  complaint Complaint @relation(fields: [complaintId], references: [id])
+  officer   User      @relation(fields: [officerId], references: [id])
+}
+
+model ResolutionDraft {
+  id            Int         @id @default(autoincrement())
+  complaintId   Int
+  officerId     Int?
+  draftText     String
+  generatedByAi Boolean     @default(true)
+  editedText    String?
+  status        DraftStatus @default(DRAFT)
+  createdAt     DateTime    @default(now())
+
+  complaint Complaint @relation(fields: [complaintId], references: [id])
+}
+
+model InternalNote {
+  id          Int      @id @default(autoincrement())
+  complaintId Int
+  officerId   Int
+  note        String
+  createdAt   DateTime @default(now())
+
+  complaint Complaint @relation(fields: [complaintId], references: [id])
+}
+
+model ComplaintStatusHistory {
+  id          Int              @id @default(autoincrement())
+  complaintId Int
+  oldStatus   ComplaintStatus?
+  newStatus   ComplaintStatus
+  changedBy   Int?
+  note        String?
+  createdAt   DateTime         @default(now())
+
+  complaint Complaint @relation(fields: [complaintId], references: [id])
+}
+
+model SlaPolicy {
+  id                  Int      @id @default(autoincrement())
+  priority            Priority
+  departmentId        Int
+  responseTimeHours   Int
+  resolutionTimeHours Int
+
+  department Department @relation(fields: [departmentId], references: [id])
+}
+
+model Escalation {
+  id              Int              @id @default(autoincrement())
+  complaintId     Int
+  reason          String
+  escalatedBy     Int?
+  escalatedTo     Int?
+  escalationLevel Int              @default(1)
+  status          EscalationStatus @default(OPEN)
+  escalatedAt     DateTime         @default(now())
+  resolvedAt      DateTime?
+
+  complaint Complaint @relation(fields: [complaintId], references: [id])
+}
+
+model Alert {
+  id          Int      @id @default(autoincrement())
+  complaintId Int?
+  userId      Int
+  type        String
+  message     String
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user      User       @relation(fields: [userId], references: [id])
+  complaint Complaint? @relation(fields: [complaintId], references: [id])
+}
+
+model CitizenFeedback {
+  id          Int      @id @default(autoincrement())
+  complaintId Int      @unique
+  citizenId   Int
+  rating      Int
+  comment     String?
+  createdAt   DateTime @default(now())
+
+  complaint Complaint @relation(fields: [complaintId], references: [id])
+}
+
+model AuditLog {
+  id           Int      @id @default(autoincrement())
+  userId       Int?
+  action       String
+  entityType   String
+  entityId     Int?
+  metadataJson Json?
+  createdAt    DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
 }
